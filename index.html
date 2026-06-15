@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Minimalist Travel Budget Pro v11.0</title>
+    <title>Minimalist Travel Budget Pro v12.0</title>
     
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -272,7 +272,6 @@
         }
         
         .item-details { color: #aaa; font-size: 0.72rem; margin-top: 4px; display: flex; gap: 6px; align-items: center; }
-        /* 純文字時間標籤與備註樣式 */
         .time-text { font-weight: bold; color: #7f8c8d; background: #eaeded; padding: 1px 4px; border-radius: 4px; }
         .note-text { color: #555; font-weight: 500; background: #fffbe6; padding: 1px 4px; border-radius: 4px; border: 1px solid #ffe58f; } 
 
@@ -282,6 +281,38 @@
         .amount-hkd { font-size: 0.72rem; color: #888; font-weight: 500; }
         
         .btn-action { background: none; padding: 4px; margin: 0; width: auto; font-size: 0.9rem; display: inline-block;}
+
+        /* 📸 內建大圖彈出層樣式 (防 PWA 阻擋機制) */
+        .photo-lightbox {
+            display: none; 
+            position: fixed;
+            z-index: 9999;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(5px);
+        }
+        .photo-lightbox img {
+            max-width: 92%;
+            max-height: 82%;
+            object-fit: contain;
+            border-radius: 8px;
+            box-shadow: 0 5px 25px rgba(0,0,0,0.5);
+        }
+        .lightbox-close-tip {
+            position: absolute;
+            bottom: 40px;
+            color: #ccc;
+            font-size: 0.85rem;
+            background: rgba(255,255,255,0.15);
+            padding: 6px 16px;
+            border-radius: 20px;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -339,11 +370,16 @@
         <button class="btn-backup" onclick="exportToCSV()">Backup Trip Data</button>
     </div>
 
+    <div id="lightbox" class="photo-lightbox" onclick="closeLightbox()">
+        <img id="lightbox-img" src="" alt="Full size photo">
+        <div class="lightbox-close-tip">點擊任意處關閉圖片</div>
+    </div>
+
     <script>
-        // 💡 使用萬用開源匿名上傳 Client ID（免個人實名登記，直接可用）
+        // 使用萬用開源匿名上傳 Client ID
         const IMGUR_CLIENT_ID = "546c25a59d58ad7"; 
         
-        // 🛠️ 升級為 v5 以隔離舊資料庫
+        // 使用 v5 版本隔離資料庫
         const DATA_FILE = "travel_thb_records_v5.json";
         let globalFxRate = 0.22;
         
@@ -352,7 +388,7 @@
         let selectedCategory = "";  
         let editingRecordId = null; 
         let currentPhotoUrl = ""; 
-        let currentRecordTime = ""; // 暫存正在編輯中紀錄的原本「時:分」
+        let currentRecordTime = ""; 
 
         function checkIsHkdMode(catName) {
             return catName === "✈️ Flights" || catName === "🏨 Stay" || catName === "🛡️ Insurance";
@@ -411,7 +447,6 @@
             }
         }
 
-        // 圖片本地即時預覽（選取後立刻顯示在畫面上）
         function previewPhoto(input) {
             if (input.files && input.files[0]) {
                 const reader = new FileReader();
@@ -430,7 +465,7 @@
             currentPhotoUrl = "";
         }
 
-        // 🚀 Imgur 雲端上傳 + 本地 Base64 高容錯雙儲存機制
+        // Imgur 雲端上傳 + 本地 Base64 雙備用機制
         async function uploadImageToImgur(file) {
             const getBase64 = (f) => new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -455,7 +490,7 @@
                     throw new Error("Imgur Upload Failed");
                 }
             } catch (error) {
-                console.warn("Imgur 雲端失敗，啟動本地防漏安全備用儲存...", error);
+                console.warn("Imgur 雲端失敗，啟動本地安全防漏備用機制...", error);
                 try {
                     const localBase64 = await getBase64(file);
                     return localBase64; 
@@ -464,6 +499,17 @@
                     return "";
                 }
             }
+        }
+
+        // 📸 點擊縮圖直接呼叫此函式放大圖片，避開瀏覽器限制
+        function openLightbox(imgSrc) {
+            document.getElementById('lightbox-img').src = imgSrc;
+            document.getElementById('lightbox').style.display = 'flex';
+        }
+
+        function closeLightbox() {
+            document.getElementById('lightbox').style.display = 'none';
+            document.getElementById('lightbox-img').src = '';
         }
 
         function renderCategories() {
@@ -554,14 +600,12 @@
             saveBtn.innerText = "Saving record & photo...";
             saveBtn.disabled = true;
 
-            // 處理非同步照片上傳
             let finalPhotoUrl = currentPhotoUrl; 
             if (photoInput.files && photoInput.files[0]) {
                 finalPhotoUrl = await uploadImageToImgur(photoInput.files[0]);
             }
 
             if (editingRecordId !== null) {
-                // ✏️ 編輯模式
                 const recordIndex = records.findIndex(r => r.id === editingRecordId);
                 if(recordIndex !== -1) {
                     records[recordIndex].amount = finalThbAmount;
@@ -571,7 +615,6 @@
                     records[recordIndex].wasHkdInput = isHkdMode ? inputAmount : null; 
                     records[recordIndex].photoUrl = finalPhotoUrl;
                     
-                    // 💡 關鍵安全機制：後補照片或修改內容時，鎖定原本時間不允許被覆蓋成現在時間
                     if (!records[recordIndex].time) {
                         records[recordIndex].time = currentRecordTime || "00:00";
                     }
@@ -582,7 +625,6 @@
                 saveBtn.style.backgroundColor = "var(--primary)";
                 document.getElementById('edit-indicator').style.display = "none"; 
             } else {
-                // ➕ 新增模式：擷取當前手機畫面上的精確「時:分」並鎖定為純文字
                 const now = new Date();
                 const hours = String(now.getHours()).padStart(2, '0');
                 const minutes = String(now.getMinutes()).padStart(2, '0');
@@ -594,14 +636,13 @@
                     category: selectedCategory,
                     note: note, 
                     date: targetDate,
-                    time: formattedTime, // 以純文字儲存，徹底避開時區Bug
+                    time: formattedTime, 
                     wasHkdInput: isHkdMode ? inputAmount : null,
                     photoUrl: finalPhotoUrl
                 };
                 records.unshift(newRecord);
             }
 
-            // 排序邏輯：優先比對日期(由新到舊)，若日期完全相同則對比精確純文字時間(由新到舊)
             records.sort((a, b) => {
                 let dateCompare = b.date.localeCompare(a.date);
                 if (dateCompare !== 0) return dateCompare;
@@ -633,10 +674,8 @@
             document.getElementById('edit-date').value = record.date; 
             selectedCategory = record.category;
             
-            // 💡 暫存該筆記錄原始儲存的純文字時間
             currentRecordTime = record.time || ""; 
 
-            // 載入該筆紀錄原本擁有的相片網址/Base64
             if (record.photoUrl) {
                 currentPhotoUrl = record.photoUrl;
                 document.getElementById('preview-img').src = record.photoUrl;
@@ -701,10 +740,10 @@
                 const colorStyle = getHighlightStyle(r.category);
                 const displayCategoryLabel = r.category.split(' ').slice(1).join(' ');
                 
-                // 畫面上渲染出純文字時間
                 const timeHTML = r.time ? `<span class="time-text">${r.time}</span>` : '';
-                // 生成相片縮圖連結（點擊可直接開啟原圖）
-                const photoHTML = r.photoUrl ? `<a href="${r.photoUrl}" target="_blank"><img src="${r.photoUrl}" class="item-photo" alt="receipt"></a>` : '';
+                
+                // 🛠️ 修正關鍵：將超連結 <a> 改為直接綁定 openLightbox 點擊事件，安全放大圖片！
+                const photoHTML = r.photoUrl ? `<img src="${r.photoUrl}" class="item-photo" alt="receipt" onclick="openLightbox('${r.photoUrl}')">` : '';
 
                 listContainer.innerHTML += `
                     <div class="list-item">
@@ -766,7 +805,6 @@
             catTotalsContainer.innerHTML = leftColHtml + rightColHtml;
         }
 
-        // CSV 匯出邏輯（完整支援 time 字串與照片網址）
         function exportToCSV() {
             if (records.length === 0) return alert("目前沒有可匯出的數據！");
             let sortedRecords = [...records].sort((a, b) => a.date.localeCompare(b.date) || (a.time || "").localeCompare(b.time || ""));
